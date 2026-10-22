@@ -201,6 +201,43 @@
         return `${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     }
 
+    // 輔助函式：清理日期與時間格式 (避免 Google 試算表自動將時間轉換為 1899 年之問題)
+    function cleanDisplayTime(timeStr) {
+        if (!timeStr) return '--:--';
+        const s = String(timeStr).trim();
+        if (s.includes('GMT') || s.includes('1899')) {
+            const d = new Date(s);
+            if (!isNaN(d.getTime())) {
+                return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+            }
+        }
+        return s;
+    }
+
+    function cleanDisplayDate(dateStr) {
+        if (!dateStr) return '';
+        const s = String(dateStr).trim();
+        if (s.includes('GMT')) {
+            const d = new Date(s);
+            if (!isNaN(d.getTime())) {
+                return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+            }
+        }
+        return s;
+    }
+
+    function cleanDisplayTimestamp(tsStr) {
+        if (!tsStr) return '';
+        const s = String(tsStr).trim();
+        if (s.includes('GMT')) {
+            const d = new Date(s);
+            if (!isNaN(d.getTime())) {
+                return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            }
+        }
+        return s;
+    }
+
     // HTML 字元跳脫輔助函式，防止 XSS
     function escapeHtml(str) {
         if (!str) return '';
@@ -246,11 +283,16 @@
                 </div>
         ` : '';
 
+        // 格式化顯示時間，避免長日期或 1899 年之問題
+        const displayTimestamp = cleanDisplayTimestamp(r.timestamp);
+        const displayResultTime = cleanDisplayTime(r.resultTime);
+        const displayResultDate = cleanDisplayDate(r.resultDate);
+
         item.innerHTML = `
             <div class="flex-1 pr-2 space-y-1">
                 <!-- 第一行：計算時間與倒數/過期狀態 -->
                 <div class="flex items-center justify-between">
-                    <span class="text-xs text-gray-400">計算時間: ${r.timestamp}</span>
+                    <span class="text-xs text-gray-400">計算時間: ${displayTimestamp}</span>
                     ${remainingStr}
                 </div>
                 ${taskHtml}
@@ -261,8 +303,8 @@
                 </div>
                 <!-- 第三行：目標時間與日期 (固定統一在箭頭下方行呈現) -->
                 <div class="flex items-baseline gap-2 pt-0.5">
-                    <span class="font-mono font-bold text-green-700 text-lg tracking-wider">${r.resultTime}</span>
-                    <span class="text-xs text-gray-500 font-medium">${r.resultDate || ''}</span>
+                    <span class="font-mono font-bold text-green-700 text-lg tracking-wider">${displayResultTime}</span>
+                    <span class="text-xs text-gray-500 font-medium">${displayResultDate}</span>
                 </div>
             </div>
             <!-- 右側刪除按鈕 -->
@@ -343,11 +385,15 @@
     let gasApiUrl = localStorage.getItem('gas_api_url') || '';
 
     // 更新頂部同步狀態按鈕 UI
-    function updateSyncStatusUI() {
+    function updateSyncStatusUI(forceState) {
         const icon = document.getElementById('syncStatusIcon');
         const text = document.getElementById('syncStatusText');
         if (!icon || !text) return;
-        if (gasApiUrl) {
+        if (forceState === 'error') {
+            icon.textContent = '⚠️';
+            text.textContent = '權限未開放';
+            text.className = 'text-amber-700 font-semibold';
+        } else if (gasApiUrl) {
             icon.textContent = '☁️';
             text.textContent = '雲端已連線';
             text.className = 'text-green-700 font-semibold';
@@ -364,7 +410,13 @@
             let result;
             if (gasApiUrl) {
                 const res = await fetch(`${gasApiUrl}?action=get`);
-                result = await res.json();
+                const rawText = await res.text();
+                if (rawText.startsWith('<!DOCTYPE html>') || rawText.includes('需要存取權')) {
+                    console.error('Google Apps Script 權限未開放為「所有人 (Anyone)」');
+                    updateSyncStatusUI('error');
+                    return;
+                }
+                result = JSON.parse(rawText);
             } else {
                 const res = await fetch('/api/records');
                 result = await res.json();
@@ -372,9 +424,11 @@
             if (result && result.status === 'success') {
                 records = result.data || [];
                 renderHistory();
+                if (gasApiUrl) updateSyncStatusUI('connected');
             }
         } catch (err) {
             console.error('無法讀取歷史紀錄:', err);
+            if (gasApiUrl) updateSyncStatusUI('error');
         }
     }
 
@@ -408,11 +462,16 @@
 
         try {
             if (gasApiUrl) {
-                await fetch(gasApiUrl, {
+                const res = await fetch(gasApiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify({ action: 'add', data: newRecord })
                 });
+                const resText = await res.text();
+                if (resText.includes('需要存取權') || !res.ok) {
+                    console.error('雲端寫入失敗 (需要存取權):', resText);
+                    alert('⚠️ 寫入雲端失敗：Google 回傳「需要存取權」，試算表未收到此資料！\n請至 Apps Script 執行 testRun 完成 Google 授權，並確認「誰可以存取」設為所有人。');
+                }
             } else {
                 await fetch('/api/records', {
                     method: 'POST',
@@ -539,10 +598,11 @@
                 if ("Notification" in window && Notification.permission === "granted") {
                     try {
                         const hasTask = r.task && r.task.trim().length > 0;
+                        const displayResultTime = cleanDisplayTime(r.resultTime);
                         const notifyTitle = hasTask ? `⏱️ 時間到了：${r.task.trim()}` : "⏱️ 時間到了！";
                         const notifyBody = hasTask 
-                            ? `事項【${r.task.trim()}】已到達目標時間 (${r.resultTime})！(+${r.input})` 
-                            : `項目 [+${r.input}] 目標時間 (${r.resultTime}) 已經到達！`;
+                            ? `事項【${r.task.trim()}】已到達目標時間 (${displayResultTime})！(+${r.input})` 
+                            : `項目 [+${r.input}] 目標時間 (${displayResultTime}) 已經到達！`;
 
                         const notifyOptions = {
                             body: notifyBody,
@@ -683,7 +743,7 @@
         }
     }
 
-    function saveGasUrl() {
+    async function saveGasUrl() {
         const input = document.getElementById('gasUrlInput');
         if (!input) return;
         const url = input.value.trim();
@@ -691,15 +751,51 @@
             alert('請輸入有效的 Google Apps Script 網址 (https://...)');
             return;
         }
-        gasApiUrl = url;
-        if (gasApiUrl) {
-            localStorage.setItem('gas_api_url', gasApiUrl);
-        } else {
-            localStorage.removeItem('gas_api_url');
+
+        if (!url) {
+            clearGasUrl();
+            return;
         }
-        updateSyncStatusUI();
-        toggleConfigModal();
-        loadRecordsFromBackend();
+
+        // 測試連線驗證權限
+        const saveBtn = document.querySelector('#configModal button[onclick="saveGasUrl()"]');
+        const origText = saveBtn ? saveBtn.textContent : '';
+        if (saveBtn) {
+            saveBtn.textContent = '測試連線中...';
+            saveBtn.disabled = true;
+        }
+
+        try {
+            const testRes = await fetch(`${url}?action=get`);
+            const text = await testRes.text();
+            
+            // 檢查是否回傳「需要存取權」的 Google 限制頁面
+            if (text.includes('需要存取權') || text.includes('accounts.google.com') || text.startsWith('<!DOCTYPE html>')) {
+                alert('⚠️ 連線失敗：Google 提示「需要存取權」！\n\n原因：您的 Google Apps Script 部署權限未開放給「所有人」。\n\n解決方法：\n1. 請在 Apps Script 點擊右上角「部署」->「管理部署作業」\n2. 點擊編輯 (鉛筆圖示)，將「誰可以存取 (Who has access)」改為「所有人 (Anyone)」\n3. 建立新版本並點擊「部署」儲存！');
+                if (saveBtn) { saveBtn.textContent = origText; saveBtn.disabled = false; }
+                return;
+            }
+
+            const data = JSON.parse(text);
+            if (data.status === 'success') {
+                gasApiUrl = url;
+                localStorage.setItem('gas_api_url', gasApiUrl);
+                updateSyncStatusUI('connected');
+                toggleConfigModal();
+                records = data.data || [];
+                renderHistory();
+                alert('🎉 連線成功！已成功連線至您的 Google 試算表，PC 與手機將自動同步。');
+            } else {
+                throw new Error(data.message || '回傳格式異常');
+            }
+        } catch (err) {
+            alert('⚠️ 無法連線至此網址，請確認網址是否正確或權限是否設為「所有人 (Anyone)」。\n錯誤詳情: ' + err.message);
+        } finally {
+            if (saveBtn) {
+                saveBtn.textContent = origText;
+                saveBtn.disabled = false;
+            }
+        }
     }
 
     function clearGasUrl() {

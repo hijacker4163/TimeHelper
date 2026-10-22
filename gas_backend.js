@@ -1,20 +1,23 @@
 /**
  * Google Apps Script 後端程式碼 (Google 試算表資料庫)
  * 
- * 【使用步驟】：
- * 1. 建立一個新的 Google 試算表 (Google Sheets)。
- * 2. 在第一列 (Row 1) 依序填入欄位名稱（選填，方便您辨識）：
- *    A1: ID | B1: 建立時間 | C1: 事項備忘 | D1: 倒數長度 | E1: 目標時間 | F1: 目標日期 | G1: 目標時間戳記 | H1: 已推播
- * 3. 點擊頂端選單的「擴充功能」 -> 「Apps Script」。
- * 4. 將下方所有程式碼複製貼上到 Apps Script 編輯器中，覆蓋原有內容。
- * 5. 點擊右上角「部署」 -> 「新增部署作業」：
- *    - 類型選擇：「網頁應用程式 (Web App)」
- *    - 說明：時間計算器 API
- *    - 執行身分：「我」
- *    - 誰可以存取：「所有人 (Anyone)」 (※ 重要！這樣 GitHub Pages 與手機才能讀寫)
- * 6. 點擊「部署」，授權 Google 權限，複製產生的「網頁應用程式網址 (Web App URL)」。
- * 7. 將該網址貼入前端頁面的「⚙️ 雲端同步設定」中即可！
+ * 【更新說明】：
+ * 1. 自動辨識第一列是否為標題列：若第一列是資料（沒有填 ID/標題），也會完整讀取第一筆資料！
+ * 2. 徹底解決 Google 試算表將時間自動轉為「Sat Dec 30 1899」長字串的格式問題，統一還原為簡潔清晰的時間（如 14:59、2026/10/22）。
+ * 3. 儲存時以純文字格式儲存，避免被 Google 試算表自動套用錯誤日期格式。
+ * 
+ * 【部署方式】：
+ * 1. 複製本檔案全部內容，覆蓋到 Apps Script 編輯器中。
+ * 2. 點選「testRun」執行一次以確保授權完成。
+ * 3. 點擊「部署」 -> 「管理部署作業」 -> 點選鉛筆 ✏️ 編輯 -> 版本選擇「新版本」 -> 點擊「部署」即可！
  */
+
+// 【初次授權與測試用函式】
+function testRun() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  Logger.log("目前試算表名稱：" + sheet.getName());
+  Logger.log("✅ 成功存取試算表！Google 帳號權限已正式授權！");
+}
 
 function doGet(e) {
   return handleRequest(e);
@@ -42,32 +45,44 @@ function handleRequest(e) {
         if (!action && postData.action) {
           action = postData.action;
         }
-      } catch (parseErr) {
-        // 若無法解析為 JSON，繼續嘗試參數
+      } catch (parseErr) {}
+    }
+
+    var rawData = sheet.getDataRange().getValues();
+    var displayData = sheet.getDataRange().getDisplayValues();
+
+    // 判斷第一列是否為標題列 (若第一格不是純數字，或寫著 ID/編號，則視為標題列)
+    var hasHeader = false;
+    if (rawData.length > 0 && rawData[0].length > 0) {
+      var firstCell = String(rawData[0][0]).trim().toLowerCase();
+      if (isNaN(Number(firstCell)) || firstCell === 'id') {
+        hasHeader = true;
       }
     }
     
     // 動作 1：獲取所有歷史紀錄 (GET 或 action=get)
     if (!action || action === 'get') {
-      var data = sheet.getDataRange().getValues();
-      if (data.length <= 1) {
+      if (rawData.length === 0 || (rawData.length === 1 && hasHeader)) {
         return jsonResponse({ status: 'success', data: [] });
       }
       
       var records = [];
-      // 從第二列開始讀取資料 (第一列為標題)
-      for (var i = 1; i < data.length; i++) {
-        var row = data[i];
-        if (!row[0]) continue; // 略過空白列
+      var startIdx = hasHeader ? 1 : 0; // 若有標題從第二列開始，若無標題從第一列完整讀取
+      
+      for (var i = startIdx; i < rawData.length; i++) {
+        var rawRow = rawData[i];
+        var dispRow = displayData[i] || [];
+        if (!rawRow[0] && rawRow[0] !== 0) continue; // 略過無 ID 之空白列
+
         records.push({
-          id: Number(row[0]),
-          timestamp: String(row[1] || ''),
-          task: String(row[2] || ''),
-          input: String(row[3] || ''),
-          resultTime: String(row[4] || ''),
-          resultDate: String(row[5] || ''),
-          targetTimestamp: Number(row[6]),
-          notified: Boolean(row[7])
+          id: Number(rawRow[0]),
+          timestamp: formatCellTimestamp(dispRow[1], rawRow[1]),
+          task: String(dispRow[2] || rawRow[2] || ''),
+          input: String(dispRow[3] || rawRow[3] || ''),
+          resultTime: formatCellTime(dispRow[4], rawRow[4]),
+          resultDate: formatCellDate(dispRow[5], rawRow[5]),
+          targetTimestamp: Number(rawRow[6]),
+          notified: Boolean(rawRow[7])
         });
       }
       return jsonResponse({ status: 'success', data: records });
@@ -76,13 +91,14 @@ function handleRequest(e) {
     // 動作 2：新增紀錄 (action=add)
     if (action === 'add') {
       var r = postData && postData.data ? postData.data : JSON.parse(params.data || '{}');
+      // 時間與日期欄位加上單引號 "'" 儲存為文字，避免 Google Sheets 自動轉型為 1899 年之 Date 物件
       sheet.appendRow([
         r.id,
-        r.timestamp,
+        "'" + r.timestamp,
         r.task || '',
         r.input,
-        r.resultTime,
-        r.resultDate,
+        "'" + r.resultTime,
+        "'" + r.resultDate,
         r.targetTimestamp,
         false
       ]);
@@ -92,9 +108,8 @@ function handleRequest(e) {
     // 動作 3：標記紀錄為已推播 (action=notify)
     if (action === 'notify') {
       var targetId = Number(postData && postData.id ? postData.id : params.id);
-      var data = sheet.getDataRange().getValues();
-      for (var i = 1; i < data.length; i++) {
-        if (Number(data[i][0]) === targetId) {
+      for (var i = 0; i < rawData.length; i++) {
+        if (Number(rawData[i][0]) === targetId) {
           sheet.getRange(i + 1, 8).setValue(true); // 標記第 8 欄 (已推播) 為 TRUE
           break;
         }
@@ -105,9 +120,8 @@ function handleRequest(e) {
     // 動作 4：刪除單筆紀錄 (action=delete)
     if (action === 'delete') {
       var targetId = Number(postData && postData.id ? postData.id : params.id);
-      var data = sheet.getDataRange().getValues();
-      for (var i = 1; i < data.length; i++) {
-        if (Number(data[i][0]) === targetId) {
+      for (var i = 0; i < rawData.length; i++) {
+        if (Number(rawData[i][0]) === targetId) {
           sheet.deleteRow(i + 1);
           break;
         }
@@ -118,8 +132,10 @@ function handleRequest(e) {
     // 動作 5：清空所有紀錄 (action=clear)
     if (action === 'clear') {
       var lastRow = sheet.getLastRow();
-      if (lastRow > 1) {
+      if (hasHeader && lastRow > 1) {
         sheet.deleteRows(2, lastRow - 1);
+      } else if (!hasHeader && lastRow >= 1) {
+        sheet.clear();
       }
       return jsonResponse({ status: 'success' });
     }
@@ -130,6 +146,62 @@ function handleRequest(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// --- 輔助函式：時間與日期精準格式化 ---
+
+function formatCellTime(dispVal, rawVal) {
+  if (rawVal instanceof Date) {
+    var h = String(rawVal.getHours()).padStart(2, '0');
+    var m = String(rawVal.getMinutes()).padStart(2, '0');
+    return h + ':' + m;
+  }
+  var s = String(dispVal || rawVal || '').trim();
+  if (s.indexOf('1899') !== -1 || s.indexOf('GMT') !== -1) {
+    var d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      var h = String(d.getHours()).padStart(2, '0');
+      var m = String(d.getMinutes()).padStart(2, '0');
+      return h + ':' + m;
+    }
+  }
+  return s || '--:--';
+}
+
+function formatCellDate(dispVal, rawVal) {
+  if (rawVal instanceof Date) {
+    return rawVal.getFullYear() + '/' + (rawVal.getMonth() + 1) + '/' + rawVal.getDate();
+  }
+  var s = String(dispVal || rawVal || '').trim();
+  if (s.indexOf('GMT') !== -1) {
+    var d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate();
+    }
+  }
+  return s;
+}
+
+function formatCellTimestamp(dispVal, rawVal) {
+  if (rawVal instanceof Date) {
+    var m = String(rawVal.getMonth() + 1);
+    var d = String(rawVal.getDate());
+    var h = String(rawVal.getHours()).padStart(2, '0');
+    var min = String(rawVal.getMinutes()).padStart(2, '0');
+    return m + '/' + d + ' ' + h + ':' + min;
+  }
+  var s = String(dispVal || rawVal || '').trim();
+  if (s.indexOf('GMT') !== -1) {
+    var dt = new Date(s);
+    if (!isNaN(dt.getTime())) {
+      var m = String(dt.getMonth() + 1);
+      var d = String(dt.getDate());
+      var h = String(dt.getHours()).padStart(2, '0');
+      var min = String(dt.getMinutes()).padStart(2, '0');
+      return m + '/' + d + ' ' + h + ':' + min;
+    }
+  }
+  return s;
 }
 
 // 輔助函式：回傳 JSON 回應與正確 MIME 類型
