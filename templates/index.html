@@ -136,8 +136,8 @@
             <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
                 <span>📜</span> 歷史紀錄
             </h2>
-            <button id="clearAllBtn" onclick="clearAllRecords()" class="text-sm px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors hidden focus:outline-none">
-                全部刪除
+            <button id="clearAllBtn" onclick="clearAllRecords()" class="text-xs px-2.5 py-1 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md border border-red-200 transition-colors hidden focus:outline-none" title="只清除已到期的紀錄，保留進行中倒數">
+                清除已到期
             </button>
         </div>
         
@@ -188,6 +188,7 @@
     // --- 2. 全域狀態變數 ---
     let currentBaseTime = new Date();
     let records = [];
+    const deletedIds = new Set(); // 追蹤已刪除的 ID，防止雲端拉取延遲導致畫面復活
 
     // --- 3. 工具與格式化函式 ---
     // 格式化日期的輔助函數 (依需求格式化為 YYYY/M/D，例如：2026/9/3)
@@ -422,7 +423,25 @@
                 result = await res.json();
             }
             if (result && result.status === 'success') {
-                records = result.data || [];
+                const rawBackendRecords = result.data || [];
+                // 清理已在後端確認刪除的 ID
+                const currentBackendIdSet = new Set(rawBackendRecords.map(r => r.id));
+                deletedIds.forEach(id => {
+                    if (!currentBackendIdSet.has(id)) {
+                        deletedIds.delete(id);
+                    }
+                });
+
+                // 濾除標記為已刪除的紀錄，防止舊快取短暫復活
+                const backendRecords = rawBackendRecords.filter(r => !deletedIds.has(r.id));
+                const backendIds = new Set(backendRecords.map(r => r.id));
+
+                // 智慧合併：保留本地 60 秒內新增、且未被刪除、但 Google 試算表尚未回傳的紀錄，防止畫面閃爍
+                const pendingLocalRecords = (records || []).filter(r => 
+                    !deletedIds.has(r.id) && !backendIds.has(r.id) && (Date.now() - r.id < 60000)
+                );
+
+                records = [...backendRecords, ...pendingLocalRecords];
                 renderHistory();
                 if (gasApiUrl) updateSyncStatusUI('connected');
             }
@@ -471,6 +490,9 @@
                 if (resText.includes('需要存取權') || !res.ok) {
                     console.error('雲端寫入失敗 (需要存取權):', resText);
                     alert('⚠️ 寫入雲端失敗：Google 回傳「需要存取權」，試算表未收到此資料！\n請至 Apps Script 執行 testRun 完成 Google 授權，並確認「誰可以存取」設為所有人。');
+                } else {
+                    // 雲端確認寫入完成後，同步更新最新狀態
+                    loadRecordsFromBackend();
                 }
             } else {
                 await fetch('/api/records', {
@@ -504,6 +526,7 @@
     // 刪除單筆紀錄
     async function deleteRecord(id) {
         try {
+            deletedIds.add(id); // 標記為已刪除，防止背景輪詢延遲導致復活
             records = records.filter(r => r.id !== id);
             renderHistory();
             if (gasApiUrl) {
@@ -520,23 +543,36 @@
         }
     }
 
-    // 全部刪除紀錄
+    // 清除已到期紀錄（保留進行中倒數，並避免畫面刪除後復活問題）
     async function clearAllRecords() {
-        if (!confirm("確定要刪除所有歷史紀錄嗎？")) return;
+        const now = Date.now();
+        const expiredRecords = records.filter(r => r.targetTimestamp <= now);
+        if (expiredRecords.length === 0) {
+            alert("目前沒有已到期的紀錄！進行中的倒數將保留。");
+            return;
+        }
+
+        if (!confirm(`確定要清除 ${expiredRecords.length} 筆已到期的紀錄嗎？\n（進行中的倒數將會保留）`)) return;
+
+        // 標記為已刪除，防止背景輪詢延遲導致舊資料復活
+        expiredRecords.forEach(r => deletedIds.add(r.id));
+
+        // 本地立即過濾：只保留進行中的倒數
+        records = records.filter(r => r.targetTimestamp > now);
+        renderHistory();
+
         try {
-            records = [];
-            renderHistory();
             if (gasApiUrl) {
                 await fetch(gasApiUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: 'clear' })
+                    body: JSON.stringify({ action: 'clear_expired', now: now })
                 });
             } else {
                 await fetch('/api/records', { method: 'DELETE' });
             }
         } catch (err) {
-            console.error('清空紀錄失敗:', err);
+            console.error('清空已到期紀錄失敗:', err);
         }
     }
 

@@ -59,8 +59,12 @@ def delete_record(record_id):
 
 @app.route('/api/records', methods=['DELETE'])
 def clear_all_records():
-    """清空所有歷史紀錄"""
-    save_records([])
+    """清空歷史紀錄 (依使用者需求調整為只刪除已到期紀錄，保留進行中倒數)"""
+    import time
+    now_ms = time.time() * 1000
+    records = load_records()
+    new_records = [r for r in records if r.get('targetTimestamp', 0) > now_ms]
+    save_records(new_records)
     return jsonify({'status': 'success'})
 
 @app.route('/api/records/<int:record_id>/notify', methods=['PUT'])
