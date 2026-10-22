@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="manifest" href="./manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="時間計算器">
+    <meta name="theme-color" content="#2563eb">
+    <title>剩餘時間計算器</title>
+    <!-- 引入 Tailwind CSS 以進行快速且美觀的樣式設計 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自定義一些額外的樣式，確保在不同設備上的顯示效果 */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f3f4f6; /* 淺灰色背景 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .glass-panel {
+            /* 玻璃擬態效果 */
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+        /* 自定義滾動條樣式，讓歷史紀錄區塊更美觀 */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+    </style>
+</head>
+<body>
+
+<div class="glass-panel p-8 w-full max-w-4xl mx-4 flex flex-col md:flex-row gap-8">
+    
+    <!-- 左側：計算器主體 -->
+    <div class="flex-1 flex flex-col">
+        <div class="flex items-center justify-between mb-6">
+            <h1 class="text-2xl font-bold text-gray-800 text-center md:text-left">⏱️ 剩餘時間計算器</h1>
+            <button onclick="toggleConfigModal()" class="text-xs bg-white hover:bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm flex items-center gap-1.5 transition-colors" title="設定 Google 試算表同步網址">
+                <span id="syncStatusIcon">⚙️</span>
+                <span id="syncStatusText">雲端同步</span>
+            </button>
+        </div>
+
+        <!-- 顯示目前時間的區塊 -->
+        <div class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
+            <p class="text-sm text-blue-600 font-semibold mb-1">現在時間 (GMT+8)</p>
+            <div id="currentTime" class="text-3xl font-mono font-bold text-blue-900 tracking-wider">
+                載入中...
+            </div>
+        </div>
+
+        <!-- 使用者輸入區塊 -->
+        <div class="space-y-4">
+            <!-- 事項備忘輸入（選填） -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">事項備忘（選填）：</label>
+                <div class="relative rounded-md shadow-sm">
+                    <input type="text" id="inputTask" placeholder="例如：開會、洗衣機洗完、烤箱出爐..." 
+                           class="focus:ring-blue-500 focus:border-blue-500 block w-full px-3 sm:text-base border-gray-300 rounded-md py-2 border transition-colors">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">請輸入剩餘時間：</label>
+                <div class="flex gap-3">
+                    <div class="flex-1">
+                        <div class="relative rounded-md shadow-sm">
+                            <input type="number" id="inputDays" min="0" placeholder="0" 
+                                   class="focus:ring-blue-500 focus:border-blue-500 block w-full pl-3 pr-8 sm:text-lg border-gray-300 rounded-md py-2 border transition-colors">
+                            <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                <span class="text-gray-500 sm:text-sm">天</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex-1">
+                        <div class="relative rounded-md shadow-sm">
+                            <input type="number" id="inputHours" min="0" placeholder="0" 
+                                   class="focus:ring-blue-500 focus:border-blue-500 block w-full pl-3 pr-8 sm:text-lg border-gray-300 rounded-md py-2 border transition-colors">
+                            <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                <span class="text-gray-500 sm:text-sm">時</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex-1">
+                        <div class="relative rounded-md shadow-sm">
+                            <input type="number" id="inputMinutes" min="0" max="59" placeholder="0" 
+                                   class="focus:ring-blue-500 focus:border-blue-500 block w-full pl-3 pr-8 sm:text-lg border-gray-300 rounded-md py-2 border transition-colors">
+                            <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                <span class="text-gray-500 sm:text-sm">分</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 計算按鈕 -->
+            <button onclick="calculateTime()" 
+                    class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-lg font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200">
+                計算目標時間
+            </button>
+        </div>
+
+        <!-- 顯示計算結果的區塊，預設隱藏 -->
+        <div id="resultContainer" class="mt-8 p-4 bg-green-50 rounded-lg border border-green-200 hidden transition-all duration-300 ease-in-out opacity-0 translate-y-2">
+            <p class="text-sm text-green-700 font-semibold mb-1">目標時間將會是：</p>
+            <div id="targetTime" class="text-3xl font-mono font-bold text-green-900 tracking-wider">
+                --:--
+            </div>
+            <p id="targetDate" class="text-sm text-green-600 mt-1"></p>
+            <p id="targetTask" class="text-sm text-green-800 font-medium mt-1 truncate hidden"></p>
+        </div>
+    </div>
+
+    <!-- 右側：歷史紀錄區塊 -->
+    <div class="w-full md:w-80 flex flex-col mt-8 md:mt-0 pt-6 md:pt-0 border-t md:border-t-0 md:border-l border-gray-200 md:pl-6">
+        <div class="flex justify-between items-center mb-2">
+            <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <span>📜</span> 歷史紀錄
+            </h2>
+            <button id="clearAllBtn" onclick="clearAllRecords()" class="text-sm px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors hidden focus:outline-none">
+                全部刪除
+            </button>
+        </div>
+        
+        <!-- 網頁推播通知權限按鈕與狀態指示 -->
+        <div class="mb-3 flex items-center justify-between bg-blue-50 p-2 rounded-md border border-blue-100 text-xs">
+            <span id="notificationStatusText" class="text-blue-700 font-medium">🔔 網頁推播權限: 檢查中...</span>
+            <button id="enableNotifyBtn" onclick="requestNotificationPermission()" class="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-semibold">
+                開啟推播
+            </button>
+        </div>
+
+        <!-- 紀錄列表容器，設定較大高度並允許滾動 -->
+        <div id="historyList" class="space-y-2 flex-1 max-h-64 md:max-h-[30rem] overflow-y-auto pr-2 custom-scrollbar">
+            <p id="noHistoryMsg" class="text-gray-400 text-sm text-center py-4 italic">暫無紀錄</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 0. Service Worker 與 PWA 初始化 ---
+    let swRegistration = null;
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js')
+                .then(reg => {
+                    swRegistration = reg;
+                    console.log('Service Worker 註冊成功, 範圍:', reg.scope);
+                })
+                .catch(err => console.warn('Service Worker 註冊略過/失敗:', err));
+        });
+    }
+
+    // --- 1. DOM 元素集中獲取 ---
+    const currentTimeDisplay = document.getElementById('currentTime');
+    const inputTask = document.getElementById('inputTask');
+    const inputDays = document.getElementById('inputDays');
+    const inputHours = document.getElementById('inputHours');
+    const inputMinutes = document.getElementById('inputMinutes');
+    const resultContainer = document.getElementById('resultContainer');
+    const targetTimeDisplay = document.getElementById('targetTime');
+    const targetDateDisplay = document.getElementById('targetDate');
+    const targetTaskDisplay = document.getElementById('targetTask');
+    const historyList = document.getElementById('historyList');
+    const clearAllBtn = document.getElementById('clearAllBtn');
+    const notificationStatusText = document.getElementById('notificationStatusText');
+    const enableNotifyBtn = document.getElementById('enableNotifyBtn');
+
+    // --- 2. 全域狀態變數 ---
+    let currentBaseTime = new Date();
+    let records = [];
+
+    // --- 3. 工具與格式化函式 ---
+    // 格式化日期的輔助函數 (依需求格式化為 YYYY/M/D，例如：2026/9/3)
+    function formatDate(date) {
+        return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+    }
+
+    // 格式化當前時間為簡短字串 (MM/DD HH:MM)
+    function getShortCurrentTime() {
+        const now = new Date();
+        return `${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    }
+
+    // HTML 字元跳脫輔助函式，防止 XSS
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    // 計算倒數剩餘時間字串 (如 01:23:45)
+    function getRemainingTimeStr(targetTs) {
+        const diffMs = targetTs - Date.now();
+        if (diffMs <= 0) return "已到期";
+        const totalSec = Math.floor(diffMs / 1000);
+        const h = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+        const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+        const s = String(totalSec % 60).padStart(2, '0');
+        return `${h}:${m}:${s}`;
+    }
+
+    // --- 4. 歷史紀錄 UI 渲染與卡片建立 ---
+    // 建立單筆紀錄卡片 DOM 元素
+    function createRecordCardElement(r, isExpired) {
+        const item = document.createElement('div');
+        
+        // 卡片樣式依過期與否設定
+        if (isExpired) {
+            item.className = 'bg-red-50/70 p-3 rounded-lg shadow-sm border border-red-100 flex justify-between items-center text-sm transform transition-all duration-200 hover:shadow-md';
+        } else {
+            item.className = 'bg-white p-3 rounded-lg shadow-sm border border-blue-100 flex justify-between items-center text-sm transform transition-all duration-200 hover:shadow-md hover:-translate-y-0.5';
+        }
+        
+        const remainingStr = isExpired ? '<span class="text-xs font-semibold text-red-500 bg-red-100 px-1.5 py-0.5 rounded">已過期</span>' 
+                                       : `<span class="text-xs font-mono font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">剩 ${getRemainingTimeStr(r.targetTimestamp)}</span>`;
+
+        const taskHtml = (r.task && r.task.trim()) ? `
+                <!-- 事項名稱 (若有輸入) -->
+                <div class="text-sm font-semibold text-gray-800 flex items-center gap-1.5 truncate">
+                    <span class="text-blue-500">📌</span>
+                    <span title="${escapeHtml(r.task)}">${escapeHtml(r.task)}</span>
+                </div>
+        ` : '';
+
+        item.innerHTML = `
+            <div class="flex-1 pr-2 space-y-1">
+                <!-- 第一行：計算時間與倒數/過期狀態 -->
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-400">計算時間: ${r.timestamp}</span>
+                    ${remainingStr}
+                </div>
+                ${taskHtml}
+                <!-- 第二行：輸入增加時間與箭頭 -->
+                <div class="text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                    <span>+ <span class="font-semibold text-blue-600">${r.input}</span></span>
+                    <span class="text-blue-500 font-bold">➔</span>
+                </div>
+                <!-- 第三行：目標時間與日期 (固定統一在箭頭下方行呈現) -->
+                <div class="flex items-baseline gap-2 pt-0.5">
+                    <span class="font-mono font-bold text-green-700 text-lg tracking-wider">${r.resultTime}</span>
+                    <span class="text-xs text-gray-500 font-medium">${r.resultDate || ''}</span>
+                </div>
+            </div>
+            <!-- 右側刪除按鈕 -->
+            <button onclick="deleteRecord(${r.id})" class="text-gray-400 hover:text-red-500 focus:outline-none p-1.5 rounded-md hover:bg-red-50 transition-colors flex-shrink-0 self-center" title="刪除此紀錄">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+            </button>
+        `;
+        return item;
+    }
+
+    // 渲染歷史紀錄列表 (含過期標註、分隔線與「快到的時間在最上面」排序)
+    function renderHistory() {
+        if (!historyList) return;
+        historyList.innerHTML = '<p id="noHistoryMsg" class="text-gray-400 text-sm text-center py-4 italic hidden">暫無紀錄</p>';
+        const msg = document.getElementById('noHistoryMsg');
+
+        if (!records || records.length === 0) {
+            if (msg) msg.classList.remove('hidden');
+            if (clearAllBtn) clearAllBtn.classList.add('hidden');
+            return;
+        }
+
+        if (msg) msg.classList.add('hidden');
+        if (clearAllBtn) clearAllBtn.classList.remove('hidden');
+
+        const now = Date.now();
+
+        // 將紀錄分為：已過期 (Expired) 與 進行中 (Active)
+        const expiredRecords = records.filter(r => r.targetTimestamp <= now);
+        const activeRecords = records.filter(r => r.targetTimestamp > now);
+
+        // 排序規則：
+        // 1. 已過期紀錄：在最上面顯示，最近過期的排前面 (targetTimestamp DESC)
+        expiredRecords.sort((a, b) => b.targetTimestamp - a.targetTimestamp);
+
+        // 2. 進行中紀錄：快到的時間在最上面 (targetTimestamp ASC)
+        activeRecords.sort((a, b) => a.targetTimestamp - b.targetTimestamp);
+
+        // 渲染已過期紀錄
+        if (expiredRecords.length > 0) {
+            const expiredHeader = document.createElement('div');
+            expiredHeader.className = 'text-xs font-bold text-red-600 flex items-center gap-1 my-1 px-1';
+            expiredHeader.innerHTML = `<span>⚠️</span> 已過期的紀錄 (${expiredRecords.length})`;
+            historyList.appendChild(expiredHeader);
+
+            expiredRecords.forEach(r => {
+                const item = createRecordCardElement(r, true);
+                historyList.appendChild(item);
+            });
+        }
+
+        // 當同時有過期與進行中紀錄，或是過期紀錄之後，繪製優美分隔線
+        if (expiredRecords.length > 0 && activeRecords.length > 0) {
+            const divider = document.createElement('div');
+            divider.className = 'relative my-3 flex items-center justify-center';
+            divider.innerHTML = `
+                <div class="absolute inset-0 flex items-center"><div class="w-full border-t border-gray-300 border-dashed"></div></div>
+                <div class="relative bg-gray-100 px-3 text-xs font-semibold text-gray-500 rounded-full">⏳ 進行中 (快到排最前)</div>
+            `;
+            historyList.appendChild(divider);
+        } else if (expiredRecords.length === 0 && activeRecords.length > 0) {
+            const activeHeader = document.createElement('div');
+            activeHeader.className = 'text-xs font-bold text-blue-600 flex items-center gap-1 my-1 px-1';
+            activeHeader.innerHTML = `<span>⌛</span> 進行中倒數 (${activeRecords.length})`;
+            historyList.appendChild(activeHeader);
+        }
+
+        // 渲染進行中紀錄 (快到在最上)
+        activeRecords.forEach(r => {
+            const item = createRecordCardElement(r, false);
+            historyList.appendChild(item);
+        });
+    }
+
+    // --- 5. 後端 API 與 Google 試算表 (GAS) 溝通函式 ---
+    let gasApiUrl = localStorage.getItem('gas_api_url') || '';
+
+    // 更新頂部同步狀態按鈕 UI
+    function updateSyncStatusUI() {
+        const icon = document.getElementById('syncStatusIcon');
+        const text = document.getElementById('syncStatusText');
+        if (!icon || !text) return;
+        if (gasApiUrl) {
+            icon.textContent = '☁️';
+            text.textContent = '雲端已連線';
+            text.className = 'text-green-700 font-semibold';
+        } else {
+            icon.textContent = '⚙️';
+            text.textContent = '雲端同步';
+            text.className = 'text-gray-700';
+        }
+    }
+
+    // 從 Flask API 或 Google Apps Script 讀取 JSON 歷史紀錄
+    async function loadRecordsFromBackend() {
+        try {
+            let result;
+            if (gasApiUrl) {
+                const res = await fetch(`${gasApiUrl}?action=get`);
+                result = await res.json();
+            } else {
+                const res = await fetch('/api/records');
+                result = await res.json();
+            }
+            if (result && result.status === 'success') {
+                records = result.data || [];
+                renderHistory();
+            }
+        } catch (err) {
+            console.error('無法讀取歷史紀錄:', err);
+        }
+    }
+
+    // 儲存新紀錄到 JSON 後端與本地陣列（保留原始簽名以維持向下相容性）
+    async function saveRecord(d, h, m, resultTime, resultDate, targetTimestamp) {
+        return saveRecordWithTask(d, h, m, resultTime, resultDate, targetTimestamp, '');
+    }
+
+    // [擴充函式] 支援事項文字 (task) 之儲存紀錄函式，保留既有 saveRecord 簽名不變
+    async function saveRecordWithTask(d, h, m, resultTime, resultDate, targetTimestamp, task = '') {
+        let parts = [];
+        if (d > 0) parts.push(`${d}天`);
+        if (h > 0) parts.push(`${h}小時`);
+        if (m > 0) parts.push(`${m}分鐘`);
+        const inputStr = parts.length > 0 ? parts.join(' ') : '0分鐘';
+        
+        const newRecord = {
+            id: Date.now(), // 使用時間戳記作為唯一 ID
+            timestamp: getShortCurrentTime(),
+            task: (task || '').trim(), // 事項備忘（可為空）
+            input: inputStr,
+            resultTime: resultTime,
+            resultDate: resultDate,
+            targetTimestamp: targetTimestamp || (Date.now() + (d*86400 + h*3600 + m*60)*1000),
+            notified: false
+        };
+
+        // 立即推進本地陣列並刷新歷史紀錄 UI
+        records.push(newRecord);
+        renderHistory();
+
+        try {
+            if (gasApiUrl) {
+                await fetch(gasApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'add', data: newRecord })
+                });
+            } else {
+                await fetch('/api/records', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newRecord)
+                });
+            }
+        } catch (err) {
+            console.error('儲存紀錄失敗:', err);
+        }
+    }
+
+    // 標記紀錄為已推播 (寫回 Flask 後端或 Google 試算表)
+    async function markRecordNotifiedBackend(id) {
+        try {
+            if (gasApiUrl) {
+                await fetch(gasApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'notify', id: id })
+                });
+            } else {
+                await fetch(`/api/records/${id}/notify`, { method: 'PUT' });
+            }
+        } catch (err) {
+            console.error('更新推播狀態失敗:', err);
+        }
+    }
+
+    // 刪除單筆紀錄
+    async function deleteRecord(id) {
+        try {
+            records = records.filter(r => r.id !== id);
+            renderHistory();
+            if (gasApiUrl) {
+                await fetch(gasApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'delete', id: id })
+                });
+            } else {
+                await fetch(`/api/records/${id}`, { method: 'DELETE' });
+            }
+        } catch (err) {
+            console.error('刪除單筆紀錄失敗:', err);
+        }
+    }
+
+    // 全部刪除紀錄
+    async function clearAllRecords() {
+        if (!confirm("確定要刪除所有歷史紀錄嗎？")) return;
+        try {
+            records = [];
+            renderHistory();
+            if (gasApiUrl) {
+                await fetch(gasApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'clear' })
+                });
+            } else {
+                await fetch('/api/records', { method: 'DELETE' });
+            }
+        } catch (err) {
+            console.error('清空紀錄失敗:', err);
+        }
+    }
+
+    // --- 6. 推播與時鐘邏輯 ---
+    // 檢查與更新推播權限狀態 UI
+    function updateNotificationStatusUI() {
+        if (!notificationStatusText || !enableNotifyBtn) return;
+        if (!("Notification" in window)) {
+            notificationStatusText.textContent = "⚠️ 瀏覽器不支援推播通知";
+            enableNotifyBtn.classList.add('hidden');
+            return;
+        }
+
+        if (Notification.permission === "granted") {
+            notificationStatusText.textContent = "🔔 推播通知：已開啟";
+            notificationStatusText.className = "text-green-700 font-semibold";
+            enableNotifyBtn.classList.add('hidden');
+        } else if (Notification.permission === "denied") {
+            notificationStatusText.textContent = "🔕 推播通知：已封鎖 (請在瀏覽器設定開啟)";
+            notificationStatusText.className = "text-red-600 font-medium";
+            enableNotifyBtn.classList.remove('hidden');
+            enableNotifyBtn.textContent = "重新授權";
+        } else {
+            notificationStatusText.textContent = "🔔 推播通知：尚未開啟";
+            notificationStatusText.className = "text-amber-700 font-medium";
+            enableNotifyBtn.classList.remove('hidden');
+            enableNotifyBtn.textContent = "開啟推播";
+        }
+    }
+
+    // 請求網頁推播權限
+    function requestNotificationPermission() {
+        if (!("Notification" in window)) {
+            alert("您的瀏覽器不支援桌面推播通知！");
+            return;
+        }
+
+        Notification.requestPermission().then(permission => {
+            updateNotificationStatusUI();
+            if (permission === "granted") {
+                const welcomeTitle = "⏱️ 剩餘時間計算器";
+                const welcomeOptions = {
+                    body: "推播通知已成功開啟！當目標時間到達時將會提醒您。"
+                };
+                if (swRegistration && typeof swRegistration.showNotification === 'function') {
+                    swRegistration.showNotification(welcomeTitle, welcomeOptions);
+                } else {
+                    new Notification(welcomeTitle, welcomeOptions);
+                }
+            }
+        });
+    }
+
+    // 檢查倒數時間並發送網頁推播通知 (支援 Service Worker 與行動端)
+    function checkAndSendNotifications() {
+        const now = Date.now();
+        records.forEach(r => {
+            if (r.targetTimestamp <= now && !r.notified) {
+                if ("Notification" in window && Notification.permission === "granted") {
+                    try {
+                        const hasTask = r.task && r.task.trim().length > 0;
+                        const notifyTitle = hasTask ? `⏱️ 時間到了：${r.task.trim()}` : "⏱️ 時間到了！";
+                        const notifyBody = hasTask 
+                            ? `事項【${r.task.trim()}】已到達目標時間 (${r.resultTime})！(+${r.input})` 
+                            : `項目 [+${r.input}] 目標時間 (${r.resultTime}) 已經到達！`;
+
+                        const notifyOptions = {
+                            body: notifyBody,
+                            requireInteraction: true,
+                            vibrate: [200, 100, 200],
+                            tag: 'timer-' + r.id
+                        };
+
+                        // 優先使用 Service Worker 的 showNotification (手機行動端與 PWA 必須使用此方式)
+                        if (swRegistration && typeof swRegistration.showNotification === 'function') {
+                            swRegistration.showNotification(notifyTitle, notifyOptions);
+                        } else {
+                            new Notification(notifyTitle, notifyOptions);
+                        }
+                    } catch (e) {
+                        console.error("發送推播失敗:", e);
+                    }
+                }
+                r.notified = true;
+                markRecordNotifiedBackend(r.id);
+            }
+        });
+    }
+
+    // 更新目前時間的函數，並每秒檢測推播與更新歷史倒數狀態
+    function updateClock() {
+        const now = new Date();
+        currentBaseTime = now;
+        
+        // 確保時間格式為 HH:MM:SS
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        
+        if (currentTimeDisplay) {
+            currentTimeDisplay.textContent = `${hours}:${minutes}:${seconds}`;
+        }
+
+        // 每秒檢查推播狀態與更新 UI
+        checkAndSendNotifications();
+        renderHistory();
+    }
+
+    // --- 7. 計算按鈕主邏輯 ---
+    // 計算目標時間的函數
+    function calculateTime() {
+        // 獲取使用者輸入的值，若為空則預設為 0
+        const daysToAdd = parseInt(inputDays.value) || 0;
+        const hoursToAdd = parseInt(inputHours.value) || 0;
+        const minutesToAdd = parseInt(inputMinutes.value) || 0;
+        const taskText = inputTask ? inputTask.value.trim() : '';
+
+        // 如果三個輸入都是 0，則不進行計算
+        if (daysToAdd === 0 && hoursToAdd === 0 && minutesToAdd === 0) {
+            return;
+        }
+
+        // 建立一個基於目前時間的新 Date 物件，以避免修改到原始時間
+        const targetDate = new Date(currentBaseTime.getTime());
+
+        // 加上使用者輸入的天數、小時與分鐘
+        targetDate.setDate(targetDate.getDate() + daysToAdd);
+        targetDate.setHours(targetDate.getHours() + hoursToAdd);
+        targetDate.setMinutes(targetDate.getMinutes() + minutesToAdd);
+
+        // 格式化目標時間的顯示
+        const targetHours = String(targetDate.getHours()).padStart(2, '0');
+        const targetMins = String(targetDate.getMinutes()).padStart(2, '0');
+        
+        targetTimeDisplay.textContent = `${targetHours}:${targetMins}`;
+        
+        // 依照使用者需求：直接顯示標準日期格式 (如 2026/9/3)，不再使用 (今天)/(隔天) 等文字
+        const dateInfoText = formatDate(targetDate);
+        targetDateDisplay.textContent = dateInfoText;
+
+        // 若有輸入事項備忘，在結果區塊中呈現
+        if (targetTaskDisplay) {
+            if (taskText) {
+                targetTaskDisplay.textContent = `📌 事項：${taskText}`;
+                targetTaskDisplay.classList.remove('hidden');
+            } else {
+                targetTaskDisplay.textContent = '';
+                targetTaskDisplay.classList.add('hidden');
+            }
+        }
+
+        // 儲存此次計算紀錄，傳入 daysToAdd 以及精確毫秒目標時間戳記與事項備忘
+        saveRecordWithTask(daysToAdd, hoursToAdd, minutesToAdd, targetTimeDisplay.textContent, dateInfoText, targetDate.getTime(), taskText);
+
+        // UX 優化：點擊計算後自動清空輸入框內容
+        inputDays.value = '';
+        inputHours.value = '';
+        inputMinutes.value = '';
+        if (inputTask) inputTask.value = '';
+
+        // 顯示結果區塊並加上簡單的動畫效果
+        resultContainer.classList.remove('hidden');
+        setTimeout(() => {
+            resultContainer.classList.remove('opacity-0', 'translate-y-2');
+            resultContainer.classList.add('opacity-100', 'translate-y-0');
+        }, 10);
+    }
+    
+    // 允許在輸入框按下 Enter 鍵也能觸發計算
+    if (inputTask) {
+        inputTask.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') calculateTime();
+        });
+    }
+    inputDays.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') calculateTime();
+    });
+    inputHours.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') calculateTime();
+    });
+    inputMinutes.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') calculateTime();
+    });
+
+    // --- 8. 腳本初始化執行與定時器設定 ---
+    updateSyncStatusUI();
+    updateNotificationStatusUI();
+    loadRecordsFromBackend();
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // --- 9. 雲端同步 (Google Apps Script) 設定與多裝置輪詢 ---
+    function toggleConfigModal() {
+        const modal = document.getElementById('configModal');
+        const input = document.getElementById('gasUrlInput');
+        if (!modal) return;
+        const isHidden = modal.classList.contains('hidden');
+        if (isHidden) {
+            if (input) input.value = gasApiUrl;
+            modal.classList.remove('hidden');
+        } else {
+            modal.classList.add('hidden');
+        }
+    }
+
+    function saveGasUrl() {
+        const input = document.getElementById('gasUrlInput');
+        if (!input) return;
+        const url = input.value.trim();
+        if (url && !url.startsWith('http')) {
+            alert('請輸入有效的 Google Apps Script 網址 (https://...)');
+            return;
+        }
+        gasApiUrl = url;
+        if (gasApiUrl) {
+            localStorage.setItem('gas_api_url', gasApiUrl);
+        } else {
+            localStorage.removeItem('gas_api_url');
+        }
+        updateSyncStatusUI();
+        toggleConfigModal();
+        loadRecordsFromBackend();
+    }
+
+    function clearGasUrl() {
+        gasApiUrl = '';
+        localStorage.removeItem('gas_api_url');
+        const input = document.getElementById('gasUrlInput');
+        if (input) input.value = '';
+        updateSyncStatusUI();
+        toggleConfigModal();
+        loadRecordsFromBackend();
+    }
+
+    // 多裝置切換回前景時自動拉取最新資料
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && gasApiUrl) {
+            loadRecordsFromBackend();
+        }
+    });
+
+    // 多裝置定時背景輪詢 (每 20 秒自動同步一次)
+    setInterval(() => {
+        if (gasApiUrl) {
+            loadRecordsFromBackend();
+        }
+    }, 20000);
+
+</script>
+
+<!-- Google Apps Script 雲端同步設定彈窗 -->
+<div id="configModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4">
+        <div class="flex justify-between items-center border-b pb-3">
+            <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <span>☁️</span> Google 試算表雲端同步
+            </h3>
+            <button onclick="toggleConfigModal()" class="text-gray-400 hover:text-gray-600 text-xl font-bold">&times;</button>
+        </div>
+        <p class="text-xs text-gray-500 leading-relaxed">
+            輸入您部署的 <strong>Google Apps Script Web App 網址</strong>，即可讓手機與 PC 透過 Google 試算表即時跨裝置同步歷史紀錄。若留空則使用本地模式。
+        </p>
+        <div>
+            <label class="block text-xs font-semibold text-gray-700 mb-1">Web App URL (以 /exec 結尾)：</label>
+            <input type="url" id="gasUrlInput" placeholder="https://script.google.com/macros/s/.../exec"
+                   class="w-full text-xs p-2.5 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+            <button onclick="clearGasUrl()" class="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded-md transition-colors">
+                清除/切回本地
+            </button>
+            <button onclick="saveGasUrl()" class="px-4 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md transition-colors shadow">
+                儲存並同步
+            </button>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

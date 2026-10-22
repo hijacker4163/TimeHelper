@@ -1,0 +1,17 @@
+{
+  "name": "剩餘時間計算器",
+  "short_name": "時間計算器",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f3f4f6",
+  "theme_color": "#2563eb",
+  "orientation": "portrait",
+  "description": "計算剩餘時間與目標時間，支援多裝置同步與時間到期提醒。",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='48' fill='%232563eb'/><text x='50' y='65' font-size='45' text-anchor='middle' fill='white'>⏱️</text></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

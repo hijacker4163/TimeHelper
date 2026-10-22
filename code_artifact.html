@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>剩餘時間計算器</title>
+    <!-- 引入 Tailwind CSS 以進行快速且美觀的樣式設計 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 自定義一些額外的樣式，確保在不同設備上的顯示效果 */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f3f4f6; /* 淺灰色背景 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .glass-panel {
+            /* 玻璃擬態效果 */
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+        /* 自定義滾動條樣式，讓歷史紀錄區塊更美觀 */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+    </style>
+</head>
+<body>
+
+<div class="glass-panel p-8 w-full max-w-4xl mx-4 flex flex-col md:flex-row gap-8">
+    
+    <!-- 左側：計算器主體 -->
+    <div class="flex-1 flex flex-col">
+        <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center md:text-left">⏱️ 剩餘時間計算器</h1>
+
+        <!-- 顯示目前時間的區塊 -->
+        <div class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
+            <p class="text-sm text-blue-600 font-semibold mb-1">現在時間 (GMT+8)</p>
+            <div id="currentTime" class="text-3xl font-mono font-bold text-blue-900 tracking-wider">
+                載入中...
+            </div>
+        </div>
+
+        <!-- 使用者輸入區塊 -->
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">請輸入剩餘時間：</label>
+                <div class="flex gap-3">
+                    <div class="flex-1">
+                        <div class="relative rounded-md shadow-sm">
+                            <input type="number" id="inputDays" min="0" placeholder="0" 
+                                   class="focus:ring-blue-500 focus:border-blue-500 block w-full pl-3 pr-8 sm:text-lg border-gray-300 rounded-md py-2 border transition-colors">
+                            <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                <span class="text-gray-500 sm:text-sm">天</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex-1">
+                        <div class="relative rounded-md shadow-sm">
+                            <input type="number" id="inputHours" min="0" placeholder="0" 
+                                   class="focus:ring-blue-500 focus:border-blue-500 block w-full pl-3 pr-8 sm:text-lg border-gray-300 rounded-md py-2 border transition-colors">
+                            <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                <span class="text-gray-500 sm:text-sm">時</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex-1">
+                        <div class="relative rounded-md shadow-sm">
+                            <input type="number" id="inputMinutes" min="0" max="59" placeholder="0" 
+                                   class="focus:ring-blue-500 focus:border-blue-500 block w-full pl-3 pr-8 sm:text-lg border-gray-300 rounded-md py-2 border transition-colors">
+                            <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                <span class="text-gray-500 sm:text-sm">分</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 計算按鈕 -->
+            <button onclick="calculateTime()" 
+                    class="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-lg font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200">
+                計算目標時間
+            </button>
+        </div>
+
+        <!-- 顯示計算結果的區塊，預設隱藏 -->
+        <div id="resultContainer" class="mt-8 p-4 bg-green-50 rounded-lg border border-green-200 hidden transition-all duration-300 ease-in-out opacity-0 translate-y-2">
+            <p class="text-sm text-green-700 font-semibold mb-1">目標時間將會是：</p>
+            <div id="targetTime" class="text-3xl font-mono font-bold text-green-900 tracking-wider">
+                --:--
+            </div>
+            <p id="targetDate" class="text-sm text-green-600 mt-1"></p>
+        </div>
+    </div>
+
+    <!-- 右側：歷史紀錄區塊 -->
+    <div class="w-full md:w-80 flex flex-col mt-8 md:mt-0 pt-6 md:pt-0 border-t md:border-t-0 md:border-l border-gray-200 md:pl-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <span>📜</span> 歷史紀錄
+            </h2>
+            <button id="clearAllBtn" onclick="clearAllRecords()" class="text-sm px-2 py-1 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors hidden focus:outline-none">
+                全部刪除
+            </button>
+        </div>
+        <!-- 紀錄列表容器，設定較大高度並允許滾動 -->
+        <div id="historyList" class="space-y-2 flex-1 max-h-64 md:max-h-[32rem] overflow-y-auto pr-2 custom-scrollbar">
+            <p id="noHistoryMsg" class="text-gray-400 text-sm text-center py-4 italic">暫無紀錄</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 獲取 DOM 元素
+    const currentTimeDisplay = document.getElementById('currentTime');
+    const inputDays = document.getElementById('inputDays');
+    const inputHours = document.getElementById('inputHours');
+    const inputMinutes = document.getElementById('inputMinutes');
+    const resultContainer = document.getElementById('resultContainer');
+    const targetTimeDisplay = document.getElementById('targetTime');
+    const targetDateDisplay = document.getElementById('targetDate');
+
+    let currentBaseTime = new Date();
+
+    // 更新目前時間的函數
+    function updateClock() {
+        const now = new Date();
+        currentBaseTime = now;
+        
+        // 確保時間格式為 HH:MM:SS
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        
+        currentTimeDisplay.textContent = `${hours}:${minutes}:${seconds}`;
+    }
+
+    // 初始化時鐘並設定每秒更新
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // 格式化日期的輔助函數 (例如：2026年9月2日)
+    function formatDate(date) {
+        return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+    }
+
+    // 計算目標時間的函數
+    function calculateTime() {
+        // 獲取使用者輸入的值，若為空則預設為 0
+        const daysToAdd = parseInt(inputDays.value) || 0;
+        const hoursToAdd = parseInt(inputHours.value) || 0;
+        const minutesToAdd = parseInt(inputMinutes.value) || 0;
+
+        // 如果三個輸入都是 0，則不進行計算
+        if (daysToAdd === 0 && hoursToAdd === 0 && minutesToAdd === 0) {
+            return;
+        }
+
+        // 建立一個基於目前時間的新 Date 物件，以避免修改到原始時間
+        const targetDate = new Date(currentBaseTime.getTime());
+
+        // 加上使用者輸入的天數、小時與分鐘
+        targetDate.setDate(targetDate.getDate() + daysToAdd);
+        targetDate.setHours(targetDate.getHours() + hoursToAdd);
+        targetDate.setMinutes(targetDate.getMinutes() + minutesToAdd);
+
+        // 格式化目標時間的顯示
+        const targetHours = String(targetDate.getHours()).padStart(2, '0');
+        const targetMins = String(targetDate.getMinutes()).padStart(2, '0');
+        
+        targetTimeDisplay.textContent = `${targetHours}:${targetMins}`;
+        
+        // 判斷目標時間是否跨日以及跨了幾天
+        let dateInfoText = '';
+        // 將時間歸零比較純日期差距，以精確計算經過天數
+        const baseDateOnly = new Date(currentBaseTime.getFullYear(), currentBaseTime.getMonth(), currentBaseTime.getDate());
+        const targetDateOnly = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+        const diffDays = Math.round((targetDateOnly - baseDateOnly) / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 0) {
+            dateInfoText = `(今天) ${formatDate(targetDate)}`;
+        } else if (diffDays === 1) {
+            dateInfoText = `(隔天) ${formatDate(targetDate)}`;
+        } else {
+            dateInfoText = `(${diffDays}天後) ${formatDate(targetDate)}`;
+        }
+        targetDateDisplay.textContent = dateInfoText;
+
+        // 新增：儲存此次計算紀錄，傳入 daysToAdd
+        saveRecord(daysToAdd, hoursToAdd, minutesToAdd, targetTimeDisplay.textContent, dateInfoText);
+
+        // 顯示結果區塊並加上簡單的動畫效果
+        resultContainer.classList.remove('hidden');
+        // 使用 setTimeout 確保 display:block 生效後才改變 opacity 觸發過渡效果
+        setTimeout(() => {
+            resultContainer.classList.remove('opacity-0', 'translate-y-2');
+            resultContainer.classList.add('opacity-100', 'translate-y-0');
+        }, 10);
+    }
+    
+    // 允許在輸入框按下 Enter 鍵也能觸發計算
+    inputDays.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') calculateTime();
+    });
+    inputHours.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') calculateTime();
+    });
+    inputMinutes.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') calculateTime();
+    });
+
+    // --- 歷史紀錄相關邏輯 ---
+    
+    // 獲取歷史紀錄的 DOM 元素
+    const historyList = document.getElementById('historyList');
+    const clearAllBtn = document.getElementById('clearAllBtn');
+
+    // 從 localStorage 讀取紀錄，若無則初始化為空陣列
+    let records = JSON.parse(localStorage.getItem('timeCalcRecords')) || [];
+
+    // 格式化當前時間為簡短字串 (MM/DD HH:MM)
+    function getShortCurrentTime() {
+        const now = new Date();
+        return `${now.getMonth() + 1}/${now.getDate()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    }
+
+    // 儲存新紀錄
+    function saveRecord(d, h, m, resultTime, resultDate) {
+        let parts = [];
+        if (d > 0) parts.push(`${d}天`);
+        if (h > 0) parts.push(`${h}小時`);
+        if (m > 0) parts.push(`${m}分鐘`);
+        const inputStr = parts.length > 0 ? parts.join(' ') : '0分鐘';
+        
+        const record = {
+            id: Date.now(), // 使用時間戳記作為唯一 ID
+            timestamp: getShortCurrentTime(),
+            input: inputStr,
+            resultTime: resultTime,
+            resultDate: resultDate
+        };
+        records.unshift(record); // 將新紀錄加到陣列最前面
+        updateStorageAndUI();
+    }
+
+    // 刪除單筆紀錄
+    function deleteRecord(id) {
+        records = records.filter(r => r.id !== id);
+        updateStorageAndUI();
+    }
+
+    // 全部刪除紀錄
+    function clearAllRecords() {
+        records = [];
+        updateStorageAndUI();
+    }
+
+    // 更新 LocalStorage 並重新渲染 UI
+    function updateStorageAndUI() {
+        localStorage.setItem('timeCalcRecords', JSON.stringify(records));
+        renderHistory();
+    }
+
+    // 渲染歷史紀錄列表
+    function renderHistory() {
+        // 先清空現有列表並插入「暫無紀錄」的預設訊息
+        historyList.innerHTML = '<p id="noHistoryMsg" class="text-gray-400 text-sm text-center py-4 italic hidden">暫無紀錄</p>';
+        const msg = document.getElementById('noHistoryMsg');
+
+        if (records.length === 0) {
+            msg.classList.remove('hidden');
+            clearAllBtn.classList.add('hidden');
+        } else {
+            msg.classList.add('hidden');
+            clearAllBtn.classList.remove('hidden');
+            
+            // 遍歷紀錄陣列並建立 HTML 元素
+            records.forEach(r => {
+                const item = document.createElement('div');
+                item.className = 'bg-white p-3 rounded-lg shadow-sm border border-gray-100 flex justify-between items-center text-sm transform transition-all duration-200 hover:shadow-md hover:-translate-y-0.5';
+                
+                // 從日期文字中提取 (今天) 或 (隔天)
+                const dateTagMatch = r.resultDate.match(/\((.*?)\)/);
+                const dateTag = dateTagMatch ? dateTagMatch[0] : '';
+                
+                item.innerHTML = `
+                    <div class="flex-1">
+                        <div class="text-xs text-gray-400 mb-0.5">計算時間: ${r.timestamp}</div>
+                        <div class="text-gray-700 flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1">
+                            <span class="whitespace-nowrap">+ <span class="font-semibold text-blue-600">${r.input}</span></span>
+                            <span class="text-gray-300 hidden sm:inline">➔</span>
+                            <span class="font-bold text-green-600 text-lg whitespace-nowrap">${r.resultTime}</span>
+                            <span class="text-xs text-green-500 font-medium">${dateTag}</span>
+                        </div>
+                    </div>
+                    <button onclick="deleteRecord(${r.id})" class="ml-2 text-gray-400 hover:text-red-500 focus:outline-none p-1.5 rounded-md hover:bg-red-50 transition-colors flex-shrink-0" title="刪除此紀錄">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
+                `;
+                historyList.appendChild(item);
+            });
+        }
+    }
+
+    // 頁面載入時初始化歷史紀錄的渲染
+    renderHistory();
+
+</script>
+
+</body>
+</html>

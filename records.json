@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1792633559336,
+    "timestamp": "10/22 09:45",
+    "task": "紅包",
+    "input": "1小時 14分鐘",
+    "resultTime": "10:59",
+    "resultDate": "2026/10/22",
+    "targetTimestamp": 1792637999061,
+    "notified": true
+  },
+  {
+    "id": 1792633578334,
+    "timestamp": "10/22 09:46",
+    "task": "法老",
+    "input": "7分鐘",
+    "resultTime": "09:53",
+    "resultDate": "2026/10/22",
+    "targetTimestamp": 1792633998061,
+    "notified": true
+  },
+  {
+    "id": 1792646679632,
+    "timestamp": "10/22 13:24",
+    "task": "紅包",
+    "input": "1小時 35分鐘",
+    "resultTime": "14:59",
+    "resultDate": "2026/10/22",
+    "targetTimestamp": 1792652379115,
+    "notified": false
+  }
+]
