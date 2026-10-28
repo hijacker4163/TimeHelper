@@ -250,15 +250,30 @@
             .replace(/'/g, "&#039;");
     }
 
-    // 計算倒數剩餘時間字串 (如 01:23:45)
+    // 計算倒數剩餘時間字串 (以 天(日)/時/分/秒 呈現，支援跨日倒數)
     function getRemainingTimeStr(targetTs) {
         const diffMs = targetTs - Date.now();
         if (diffMs <= 0) return "已到期";
         const totalSec = Math.floor(diffMs / 1000);
-        const h = String(Math.floor(totalSec / 3600)).padStart(2, '0');
-        const m = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
-        const s = String(totalSec % 60).padStart(2, '0');
-        return `${h}:${m}:${s}`;
+        const d = Math.floor(totalSec / 86400);
+        const h = Math.floor((totalSec % 86400) / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const s = totalSec % 60;
+
+        // 若大於等於 1 天，顯示 天/時/分/秒 (例如: 1天 2時 05分 30秒)
+        if (d > 0) {
+            return `${d}天 ${h}時 ${String(m).padStart(2, '0')}分 ${String(s).padStart(2, '0')}秒`;
+        }
+        // 若未滿 1 天但大於等於 1 小時，顯示 時/分/秒 (例如: 2時 05分 30秒)
+        if (h > 0) {
+            return `${h}時 ${String(m).padStart(2, '0')}分 ${String(s).padStart(2, '0')}秒`;
+        }
+        // 若未滿 1 小時但大於等於 1 分鐘，顯示 分/秒 (例如: 5分 30秒)
+        if (m > 0) {
+            return `${m}分 ${String(s).padStart(2, '0')}秒`;
+        }
+        // 未滿 1 分鐘，顯示 秒 (例如: 30秒)
+        return `${s}秒`;
     }
 
     // --- 4. 歷史紀錄 UI 渲染與卡片建立 ---
@@ -274,7 +289,7 @@
         }
         
         const remainingStr = isExpired ? '<span class="text-xs font-semibold text-red-500 bg-red-100 px-1.5 py-0.5 rounded">已過期</span>' 
-                                       : `<span class="text-xs font-mono font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">剩 ${getRemainingTimeStr(r.targetTimestamp)}</span>`;
+                                       : `<span class="text-xs font-mono font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 whitespace-nowrap">剩 ${getRemainingTimeStr(r.targetTimestamp)}</span>`;
 
         const taskHtml = (r.task && r.task.trim()) ? `
                 <!-- 事項名稱 (若有輸入) -->
