@@ -292,12 +292,19 @@
                                        : `<span class="text-xs font-mono font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 whitespace-nowrap">剩 ${getRemainingTimeStr(r.targetTimestamp)}</span>`;
 
         const taskHtml = (r.task && r.task.trim()) ? `
-                <!-- 事項名稱 (若有輸入) -->
-                <div class="text-sm font-semibold text-gray-800 flex items-center gap-1.5 truncate">
+                <!-- 事項名稱 (若有輸入) - 點擊可直接編輯 -->
+                <div class="text-sm font-semibold text-gray-800 flex items-center gap-1.5 truncate group cursor-pointer hover:text-blue-600 transition-colors" onclick="openEditTaskModal(${r.id})" title="點擊編輯備忘">
                     <span class="text-blue-500">📌</span>
-                    <span title="${escapeHtml(r.task)}">${escapeHtml(r.task)}</span>
+                    <span class="truncate" title="${escapeHtml(r.task)}">${escapeHtml(r.task)}</span>
+                    <span class="text-xs text-gray-400 group-hover:text-blue-500 opacity-60">✏️</span>
                 </div>
-        ` : '';
+        ` : `
+                <!-- 未設定事項備忘時提供新增捷徑 -->
+                <div class="text-xs text-gray-400 flex items-center gap-1 cursor-pointer hover:text-blue-600 transition-colors w-fit" onclick="openEditTaskModal(${r.id})" title="新增備忘事項">
+                    <span>📌</span>
+                    <span class="italic underline decoration-dashed decoration-gray-300">+ 新增備忘</span>
+                </div>
+        `;
 
         // 格式化顯示時間，避免長日期或 1899 年之問題
         const displayTimestamp = cleanDisplayTimestamp(r.timestamp);
@@ -323,12 +330,19 @@
                     <span class="text-xs text-gray-500 font-medium">${displayResultDate}</span>
                 </div>
             </div>
-            <!-- 右側刪除按鈕 -->
-            <button onclick="deleteRecord(${r.id})" class="text-gray-400 hover:text-red-500 focus:outline-none p-1.5 rounded-md hover:bg-red-50 transition-colors flex-shrink-0 self-center" title="刪除此紀錄">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-            </button>
+            <!-- 右側操作按鈕區 (編輯備忘、刪除) -->
+            <div class="flex items-center gap-0.5 flex-shrink-0 self-center">
+                <button onclick="openEditTaskModal(${r.id})" class="text-gray-400 hover:text-blue-600 focus:outline-none p-1.5 rounded-md hover:bg-blue-50 transition-colors" title="編輯備忘">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                </button>
+                <button onclick="deleteRecord(${r.id})" class="text-gray-400 hover:text-red-500 focus:outline-none p-1.5 rounded-md hover:bg-red-50 transition-colors" title="刪除此紀錄">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
+            </div>
         `;
         return item;
     }
@@ -535,6 +549,60 @@
             }
         } catch (err) {
             console.error('更新推播狀態失敗:', err);
+        }
+    }
+
+    // --- 編輯備忘事項邏輯 ---
+    let currentEditingRecordId = null;
+
+    function openEditTaskModal(id) {
+        currentEditingRecordId = id;
+        const target = records.find(r => r.id === id);
+        const modal = document.getElementById('editTaskModal');
+        const input = document.getElementById('editTaskInput');
+        if (!modal || !input) return;
+        input.value = target ? (target.task || '') : '';
+        modal.classList.remove('hidden');
+        setTimeout(() => input.focus(), 60);
+    }
+
+    function closeEditTaskModal() {
+        const modal = document.getElementById('editTaskModal');
+        if (modal) modal.classList.add('hidden');
+        currentEditingRecordId = null;
+    }
+
+    async function submitEditTask() {
+        if (!currentEditingRecordId) return;
+        const input = document.getElementById('editTaskInput');
+        const newTask = input ? input.value.trim() : '';
+        const id = currentEditingRecordId;
+        closeEditTaskModal();
+
+        // 1. 立即更新本地 records 資料並重新渲染，達成零延遲響應
+        const target = records.find(r => r.id === id);
+        if (target) {
+            target.task = newTask;
+            renderHistory();
+        }
+
+        // 2. 異步同步至後端 (Google Apps Script 或 Flask API)
+        try {
+            if (gasApiUrl) {
+                await fetch(gasApiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'update_task', id: id, task: newTask })
+                });
+            } else {
+                await fetch(`/api/records/${id}/task`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ task: newTask })
+                });
+            }
+        } catch (err) {
+            console.error('更新備忘事項失敗:', err);
         }
     }
 
@@ -874,6 +942,34 @@
     }, 20000);
 
 </script>
+
+<!-- 編輯備忘事項彈窗 -->
+<div id="editTaskModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden" onclick="if(event.target === this) closeEditTaskModal()">
+    <div class="bg-white rounded-xl max-w-sm w-full p-5 shadow-2xl space-y-4">
+        <div class="flex justify-between items-center border-b pb-2">
+            <h3 class="text-base font-bold text-gray-800 flex items-center gap-2">
+                <span>✏️</span> 編輯備忘事項
+            </h3>
+            <button onclick="closeEditTaskModal()" class="text-gray-400 hover:text-gray-600 p-1 rounded-md text-xl leading-none">
+                &times;
+            </button>
+        </div>
+        <div class="space-y-1">
+            <label class="block text-xs font-medium text-gray-500">備忘內容（留空則清除備忘）：</label>
+            <input type="text" id="editTaskInput" placeholder="請輸入備忘事項 (例如：洗衣服、煮湯)" 
+                   class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                   onkeydown="if(event.key === 'Enter') submitEditTask(); else if(event.key === 'Escape') closeEditTaskModal();">
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+            <button onclick="closeEditTaskModal()" class="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded-md transition-colors">
+                取消
+            </button>
+            <button onclick="submitEditTask()" class="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md transition-colors shadow-sm">
+                儲存
+            </button>
+        </div>
+    </div>
+</div>
 
 <!-- Google Apps Script 雲端同步設定彈窗 -->
 <div id="configModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">

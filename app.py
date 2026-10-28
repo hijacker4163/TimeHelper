@@ -57,6 +57,23 @@ def delete_record(record_id):
     save_records(new_records)
     return jsonify({'status': 'success', 'deleted_id': record_id})
 
+@app.route('/api/records/<int:record_id>/task', methods=['PUT'])
+def update_record_task(record_id):
+    """更新指定 ID 歷史紀錄的備忘事項（其他資料欄位維持不變）"""
+    data = request.json or {}
+    task_text = data.get('task', '').strip()
+    records = load_records()
+    updated = False
+    for r in records:
+        if r.get('id') == record_id:
+            r['task'] = task_text
+            updated = True
+            break
+    if updated:
+        save_records(records)
+        return jsonify({'status': 'success', 'task': task_text})
+    return jsonify({'status': 'error', 'message': '找不到該筆紀錄'}), 404
+
 @app.route('/api/records', methods=['DELETE'])
 def clear_all_records():
     """清空歷史紀錄 (依使用者需求調整為只刪除已到期紀錄，保留進行中倒數)"""
